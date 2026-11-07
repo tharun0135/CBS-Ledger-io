@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#3E1E36"><link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png"><title>CBS Ledger</title>
+<style>
+:root{--p:#3E1E36;--o:#D85A30;--g:#0F6E56;--c:#FBF7EF;--y:#C9922B;--bg:#f4f1ec;--t:#1d1a1c;--m:#6e6670;--l:#e2dbd2;--card:#fff}
+@media(prefers-color-scheme:dark){:root{--bg:#161215;--t:#f2ecef;--m:#a99fab;--l:#3a3138;--card:#221c21;--c:#2a2229}}
+*{box-sizing:border-box}body{margin:0;font:15px/1.4 system-ui,sans-serif;background:var(--bg);color:var(--t);padding-bottom:env(safe-area-inset-bottom)}
+header{position:sticky;top:0;z-index:5;background:var(--p);color:#fff;padding:calc(10px + env(safe-area-inset-top)) 14px 10px;display:flex;align-items:center;gap:10px}
+header h1{font-size:17px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}header a{color:#fff;text-decoration:none;font-size:22px}
+main{padding:12px;max-width:760px;margin:auto}.muted{color:var(--m);font-size:13px}
+.chip{font-size:12px;border-radius:99px;padding:4px 10px;background:#fff3;cursor:pointer;white-space:nowrap}.chip.g{background:var(--g)}.chip.b{background:var(--y)}.chip.r{background:#b3261e}
+.card,.tile,.sec{background:var(--card);border:1px solid var(--l);border-radius:12px}
+.card{display:flex;justify-content:space-between;align-items:center;padding:14px;margin:8px 0;color:inherit;text-decoration:none}
+.add{display:flex;gap:8px;margin:12px 0}input,select,button{font:inherit;color:inherit}
+input,select{width:100%;padding:9px;border:1px solid var(--l);border-radius:8px;background:var(--bg)}
+button,.btn{background:var(--p);color:#fff;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;display:inline-block}
+button.s,.btn.s{background:transparent;color:var(--t);border:1px solid var(--l)}button.d{background:transparent;color:#b3261e;border:1px solid #b3261e55}
+.sum{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.sum div{background:var(--card);border-left:4px solid var(--o);border-radius:8px;padding:8px 10px}
+.sum small{display:block;color:var(--m);font-size:12px}.sum b{font-size:17px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px}.tile{padding:12px;color:inherit;text-decoration:none;border-left:4px solid var(--y)}.tile small{display:block;color:var(--m)}
+.acts{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.sec{padding:10px;margin:14px 0;border-top:4px solid var(--o)}.sh{display:flex;gap:8px;margin-bottom:8px}.st{font-weight:600}
+.row{border:1px solid var(--l);border-radius:10px;margin:8px 0;background:var(--c)}.row>summary{padding:10px;cursor:pointer;font-weight:500}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 10px 10px}.g label{font-size:12px;color:var(--m)}.g output{display:block;padding:9px;background:var(--l);border-radius:8px;font-weight:600}
+.ph{display:flex;flex-wrap:wrap;gap:6px;padding:0 10px}.ph span{position:relative}.th{width:64px;height:64px;object-fit:cover;border-radius:8px;background:var(--l)}.ph i{position:absolute;top:-6px;right:-6px;background:#b3261e;color:#fff;border-radius:99px;width:20px;height:20px;text-align:center;font-style:normal;cursor:pointer}
+.ra{display:flex;justify-content:space-between;padding:10px}.tot{display:flex;flex-wrap:wrap;gap:14px;padding:10px;margin-top:8px;background:var(--c);border-radius:8px;font-weight:600}.tot b{color:var(--g)}
+.addrow{width:100%;margin-top:4px;background:var(--g)}.adds{display:flex;flex-wrap:wrap;gap:8px}
+</style></head><body><div id="app"></div>
+<script src="https://accounts.google.com/gsi/client" async></script>
+<script>
+'use strict';
+/* ---------- helpers ---------- */
+const $=s=>document.querySelector(s),LS=localStorage,uid=()=>Math.random().toString(36).slice(2,10);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+const fm=n=>(+n||0).toLocaleString('en-IN',{maximumFractionDigits:2});
+const MO='Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
+const fd=s=>{if(!s)return'';const[y,m,d]=s.split('-');return d+'-'+MO[m-1]+'-'+y};
+const today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,10);
+const ev=(f,r)=>{try{return Function('return '+f.replace(/\{(\w+)\}/g,(_,k)=>+r[k]||0))()}catch{return 0}};
+const val=(c,r)=>c.t==='calc'?ev(c.f,r):+r[c.k]||0;
+const col=i=>String.fromCharCode(66+i); // data starts in column B, like the original ledger
+
+/* ---------- schema: mirrors CBS_ledger_New_Version_Ekyam.xlsx ---------- */
+const LV=['Basic','Intermediate','Advanced'];
+const D=()=>({k:'d',l:'Date',t:'date'}),X=(k,l)=>({k,l}),N=(k,l)=>({k,l,t:'num'}),Q=(k,l,o)=>({k,l,t:'sel',o}),K=(k,l,f)=>({k,l,t:'calc',f});
+const lpT=v=>[D(),X('cu','Customer Name(Utsak/Udyogi)'),X('od','Order'),X('vn',v),X('pc','Product Code'),X('pn','Product Name'),X('sk','SKU'),N('q','Quantity'),N('lp','LP')];
+const SH=[
+{k:'pp',i:'💳',t:'Pre Paid Commitments',s:[{t:'Pre Paid Commitments',tot:['b','a','u'],c:[D(),X('v','Service Provider/Vendor'),X('p','Service/Product'),Q('i','Invoice',['yes','no']),X('o','Order Ref'),N('b','Amount Billed (₹)'),N('a','Amount Received (₹)'),K('u','Amount Due','{b}-{a}')]}]},
+{k:'dh',i:'🛵',t:'Community Dhavak',s:[{t:'Dhavak',tot:['e'],c:[D(),X('n','Dhavak Name'),X('pc','Order Pick up(Product Code)'),X('pn','Product Name'),X('vb','Vaibhavi Name'),N('m','No. of Members in group'),N('ov','Order Value(Rupees)'),N('q','Quantity(KG)'),X('dp','Delivery Point'),N('km','KM'),N('e','Amount Earned')]}]},
+{k:'vn',i:'🎓',t:'Vaani',s:[{t:'Vaani',tot:['h','t'],c:[D(),X('b','Batch No.'),X('p','DDU/Product'),Q('s','Skill Level',LV),N('h','Vaani Time (hrs)'),N('t','No. of Trainees')]}]},
+{k:'tc',i:'🧑‍🏫',t:'Trainer Capital',s:[{t:'Trainer Capital',tot:['h'],c:[D(),X('b','Batch No.'),X('p','DDU/Product'),Q('s','Skill Level',LV),N('sv','Skill Value'),N('th','Trainer Time (hrs)'),K('h','Trainer Capital','{sv}*{th}'),X('tn','Trainer Name')]}]},
+{k:'lp',i:'🏪',t:'LP Shop-Mitra',s:[
+ {t:'LP Shop/Mitra',tot:['q','lp'],c:[...lpT('Vendor/producer Name'),X('mi','Mitra Name')]},
+ {t:'Tejas (Inflow)',tot:['q','lp'],c:lpT('Vaibhavi/producer')},
+ {t:'Tejas (Outflow)',tot:['q','lp'],c:lpT('Vaibhavi/producer')},
+ {t:'Stock Inventory',c:[D(),N('sh','LP Shop'),N('tj','Tejas Stock'),X('sk','SKU'),N('q','Quantity'),N('lp','LP'),X('vn','Vaibhavi name'),X('pc','Product Code'),X('pn','Product Name'),X('s2','SKU'),N('q2','Quantity'),N('l2','LP')]}]},
+{k:'vs',i:'🤝',t:'Vasuki',s:[{t:'Vasuki',tot:['m'],c:[D(),X('n','Vasuki Name'),X('oc','Order Code'),X('rv','Retailer/Vendor/Institutational'),X('vb','Vaibhavi/producer'),X('pc','Product Code'),X('pn','Product Name'),X('sk','SKU'),N('q','Quantity'),N('ov','Order Value'),N('m','Vasuki Margin')]}]},
+{k:'sw',i:'🗓️',t:'SWSM',s:[{t:'SWSM',tot:['t','f'],c:[D(),X('a','Meeting Agenda'),N('t','Time'),N('n','No. of Members attended'),N('f','SWSM Time Completed')]}]},
+{k:'cb',i:'💰',t:'Cashbook',s:[{t:'Cash (Inflow&Outflow)',tot:['i','o'],bal:['i','o'],c:[D(),X('p','Particulars'),N('i','Cash In (₹)'),N('o','Cash Out (₹)')]}]},
+{k:'ar',i:'🧾',t:'Accounts Receivable',s:[{t:'Accounts Receivable',tot:['b','a','u'],c:[D(),X('v','Customer / Vaibhavi Name'),Q('i','Invoice',['yes','no']),X('o','Order Ref'),N('b','Amount Billed (₹)'),N('a','Amount Received (₹)'),K('u','Amount Due','{b}-{a}')]}]},
+{k:'vo',i:'🙋',t:'Volunteer Hours',s:[{t:'Volunteer Hours',tot:['h'],c:[D(),X('n','Volunteer Name'),X('a','Activity'),N('h','Hours Committed')]}]},
+{k:'ev',i:'🎪',t:'Collective Action-Events',s:[{t:'Collective Action-Events',tot:['g'],c:[D(),X('n','Event / Activity Name'),X('ds','Description'),N('p','No. of Participants'),N('t','Time'),K('g','Total','{p}*{t}')]}]},
+{k:'vb',i:'👩‍🌾',t:'Vaibhavi',grand:'cap',s:[{t:'Vaibhavi',tot:['cap'],c:[D(),X('n','Vaibhavi Name'),X('pn','Product Name'),N('q','Quantity'),Q('u','Unit(KG/PC/Liter)',['KG','PC','Liter']),Q('s','Skill Level',LV),N('sv','Skill Value'),N('m','No. of Members'),N('t','Time (hrs)'),K('cap','Vaibhavi capital','{sv}*{m}*{t}')]}]}
+];
+const mk=(tpl,t)=>({id:uid(),tpl,t,rows:[]});
+const mkSecs=s=>s.k==='lp'?s.s.map((t,i)=>mk(i,t.t)):s.k==='vb'?[1,2,3,4,5].map(i=>mk(0,'Vaibhavi-'+i)):[mk(0,s.s[0].t)];
+const tots=(t,sec)=>{const T=Object.fromEntries((t.tot||[]).map(k=>[k,sec.rows.reduce((s,r)=>s+val(t.c.find(c=>c.k===k),r),0)]));if(t.bal)T.bal=T[t.bal[0]]-T[t.bal[1]];return T};
+const tt=(v,k,key)=>(v.secs[k]||[]).reduce((s,sec)=>{const c=SH.find(x=>x.k===k).s[sec.tpl].c.find(c=>c.k===key);return c?s+sec.rows.reduce((a,r)=>a+val(c,r),0):s},0);
+const CARDS=[['Cash balance',v=>tt(v,'cb','i')-tt(v,'cb','o')],['Receivable due',v=>tt(v,'ar','u')],['Pre-paid due',v=>tt(v,'pp','u')],['Vaibhavi capital',v=>tt(v,'vb','cap')],['Trainer capital',v=>tt(v,'tc','h')],['Vasuki margin',v=>tt(v,'vs','m')],['Dhavak earned',v=>tt(v,'dh','e')],['Volunteer hrs',v=>tt(v,'vo','h')]];
+
+/* ---------- state ---------- */
+let S=JSON.parse(LS.cbs||'{"v":{}}'),openR=null,lastH='',st=LS.was?['Tap to sync',''] :['Connect Google',''];
+const save=()=>LS.cbs=JSON.stringify(S);
+const touch=v=>{v.upd=Date.now();v.dirty=1;save();queue()};
+const db=new Promise(r=>{const q=indexedDB.open('cbs',1);q.onupgradeneeded=()=>q.result.createObjectStore('i');q.onsuccess=()=>r(q.result)});
+const idb=(m,k,v)=>db.then(d=>new Promise(r=>{const s=d.transaction('i',m==='get'?'readonly':'readwrite').objectStore('i'),q=m==='get'?s.get(k):s.put(v,k);q.onsuccess=()=>r(q.result)}));
+
+/* ---------- sheet grid (used for Google Sheets AND Excel export) ---------- */
+const tx=s=>/^[=+@-]/.test(s)?"'"+s:s;
+function grid(sh,v){const R=[],F=[],TR=[];
+ (v.secs[sh.k]||[]).forEach(sec=>{const t=sh.s[sec.tpl],c=t.c;
+  R.push([sec.t]);F.push([R.length-1,'t']);R.push(['',...c.map(x=>x.l),'Photos']);F.push([R.length-1,'h']);
+  const r0=R.length+1;
+  sec.rows.forEach(r=>{const n=R.length+1;R.push(['',...c.map(x=>x.t==='calc'?'='+x.f.replace(/\{(\w+)\}/g,(_,k)=>col(c.findIndex(y=>y.k===k))+n):x.t==='date'?fd(r[x.k]):x.t==='num'?(r[x.k]===''||r[x.k]==null?'':+r[x.k]):tx(r[x.k]||'')),(r.ph||[]).filter(p=>p.url).map(p=>p.url).join('\n')])});
+  const r1=R.length;
+  if(t.tot){const a=Array(c.length+2).fill('');t.tot.forEach(k=>{const i=c.findIndex(y=>y.k===k),L=col(i);a[i+1]=r1<r0?0:`=SUM(${L}${r0}:${L}${r1})`});a[Math.max(0,c.findIndex(y=>y.k===t.tot[0]))]='TOTAL';R.push(a);F.push([R.length-1,'T']);TR.push(R.length);
+   if(t.bal){const a2=Array(c.length+2).fill('');const i=c.findIndex(y=>y.k===t.bal[0]);a2[i]='BALANCE';a2[i+1]=`=${col(i)}${R.length}-${col(i+1)}${R.length}`;R.push(a2);F.push([R.length-1,'T'])}}
+  R.push([])});
+ if(sh.grand){const i=SH.find(s=>s.k===sh.k).s[0].c.findIndex(y=>y.k===sh.grand),a=Array(i+2).fill('');a[1]=fd(today());a[2]='Vaibhavi (Micro Enterprise Group) Capital';a[3]='Live link to ledger total';a[i+1]=TR.length?'='+TR.map(n=>col(i)+n).join('+'):0;R.push(a);F.push([R.length-1,'T'])}
+ return{rows:R,f:F}}
+
+/* ---------- Google auth + API ---------- */
+const DR='https://www.googleapis.com/drive/v3',SA='https://sheets.googleapis.com/v4/spreadsheets';
+let tok=null,exp=0;
+async function conn(){if(tok&&Date.now()<exp-6e4)return tok;
+ await new Promise(r=>{const w=()=>window.google?.accounts?r():setTimeout(w,200);w()});
+ const id=LS.cid||prompt('Paste your Google OAuth Web Client ID (see README.md, step 1):');if(!id)throw new Error('No client id');LS.cid=id.trim();
+ return new Promise((res,rej)=>google.accounts.oauth2.initTokenClient({client_id:LS.cid,scope:'https://www.googleapis.com/auth/drive.file',
+  callback:r=>{if(r.error)return rej(r);tok=r.access_token;exp=Date.now()+r.expires_in*1e3;LS.was=1;res(tok)},error_callback:rej}).requestAccessToken({prompt:LS.was?'':'consent'}))}
+async function api(u,o={}){const t=await conn(),r=await fetch(u,{...o,headers:{Authorization:'Bearer '+t,...(o.headers||{})}});if(!r.ok)throw Object.assign(new Error(r.status+' '+(await r.text()).slice(0,200)),{code:r.status});return r.status===204?null:r.json()}
+const J=(m,b)=>({method:m,headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+async function up(name,type,body,id,parent){const m={name};if(!id&&parent)m.parents=[parent];const bd='b'+uid();
+ return api('https://www.googleapis.com/upload/drive/v3/files'+(id?'/'+id:'')+'?uploadType=multipart&fields=id',{method:id?'PATCH':'POST',headers:{'Content-Type':'multipart/related; boundary='+bd},body:new Blob([`--${bd}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(m)}\r\n--${bd}\r\nContent-Type: ${type}\r\n\r\n`,body,`\r\n--${bd}--`])})}
+async function folder(){if(S.fid)return S.fid;const r=await api(DR+'/files?fields=files(id)&q='+encodeURIComponent("name='CBS Ledger App' and mimeType='application/vnd.google-apps.folder' and trashed=false"));
+ S.fid=r.files[0]?.id||(await api(DR+'/files',J('POST',{name:'CBS Ledger App',mimeType:'application/vnd.google-apps.folder'}))).id;save();return S.fid}
+async function mkSheet(v,f){const r=await api(SA,J('POST',{properties:{title:'CBS Ledger - '+v.name},sheets:SH.map(s=>({properties:{title:s.t}}))}));
+ v.sid=r.spreadsheetId;v.tabs=Object.fromEntries(r.sheets.map(s=>[s.properties.title,s.properties.sheetId]));
+ await api(`${DR}/files/${v.sid}?addParents=${f}&removeParents=root`,{method:'PATCH'})}
+async function writeSheet(v){const g=SH.map(s=>grid(s,v)),U=SA+'/'+v.sid;
+ await api(U+'/values:batchClear',J('POST',{ranges:SH.map(s=>`'${s.t}'`)}));
+ await api(U+'/values:batchUpdate',J('POST',{valueInputOption:'USER_ENTERED',data:SH.map((s,i)=>({range:`'${s.t}'!A1`,values:g[i].rows}))}));
+ const rq=[],cl=a=>({red:a[0],green:a[1],blue:a[2]});
+ SH.forEach((s,i)=>{const id=v.tabs[s.t];if(id==null)return;
+  rq.push({repeatCell:{range:{sheetId:id},cell:{userEnteredFormat:{}},fields:'userEnteredFormat'}});
+  g[i].f.forEach(([r,t])=>rq.push({repeatCell:{range:{sheetId:id,startRowIndex:r,endRowIndex:r+1,endColumnIndex:14},cell:{userEnteredFormat:t==='T'?{backgroundColor:cl([.98,.97,.94]),textFormat:{bold:true}}:{backgroundColor:cl(t==='h'?[.243,.118,.212]:[.85,.35,.19]),textFormat:{bold:true,foregroundColor:cl([1,1,1])},wrapStrategy:t==='h'?'WRAP':'OVERFLOW_CELL'}},fields:'userEnteredFormat(backgroundColor,textFormat,wrapStrategy)'}}));
+  rq.push({updateDimensionProperties:{range:{sheetId:id,dimension:'COLUMNS',startIndex:1,endIndex:14},properties:{pixelSize:135},fields:'pixelSize'}})});
+ await api(U+':batchUpdate',J('POST',{requests:rq}))}
+async function push(v){const u0=v.upd,f=await folder();
+ for(const sec of Object.values(v.secs).flat())for(const r of sec.rows)for(const p of r.ph||[])if(!p.did){const b=await idb('get',p.id);if(!b)continue;const x=await up(`${v.name}_${p.id}.jpg`,'image/jpeg',b,null,f);p.did=x.id;p.url='https://drive.google.com/file/d/'+x.id+'/view'}
+ try{if(!v.sid)await mkSheet(v,f);await writeSheet(v)}catch(e){if(e.code===404&&v.sid){v.sid=null;await mkSheet(v,f);await writeSheet(v)}else throw e}
+ const x=await up(`cbs-ledger-data-${v.id}.json`,'application/json',JSON.stringify(v),v.did,f);v.did=x.id;
+ if(v.upd===u0)v.dirty=0;save()}
+async function pull(){const r=await api(DR+'/files?fields=files(id,name)&q='+encodeURIComponent("name contains 'cbs-ledger-data-' and trashed=false"));
+ for(const f of r.files){const j=await api(`${DR}/files/${f.id}?alt=media`);if(j.id&&(!S.v[j.id]||j.upd>S.v[j.id].upd)){j.dirty=0;S.v[j.id]=j}}save()}
+let busy=0,again=0,tm;
+const setSt=(t,c)=>{st=[t,c];const e=$('#st');if(e){e.textContent=t;e.className='chip '+c}};
+const queue=()=>{clearTimeout(tm);if(LS.was)tm=setTimeout(()=>sync(),2500)};
+async function sync(manual){if(busy){again=1;return}busy=1;
+ try{setSt('Saving to Drive…','b');if(manual)await pull();for(const v of Object.values(S.v))if(v.dirty||manual)await push(v);setSt('Saved to Drive ✓ '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),'g');if(manual)render()}
+ catch(e){console.error(e);setSt('Not saved – tap to retry','r')}busy=0;if(again){again=0;sync()}}
+
+/* ---------- images ---------- */
+const bu={};
+async function blobURL(id,did){if(bu[id])return bu[id];let b=await idb('get',id);
+ if(!b&&did&&tok&&Date.now()<exp){try{const r=await fetch(`${DR}/files/${did}?alt=media`,{headers:{Authorization:'Bearer '+tok}});b=await r.blob();await idb('put',id,b)}catch{}}
+ return b?bu[id]=URL.createObjectURL(b):''}
+const imgs=()=>document.querySelectorAll('img[data-p]').forEach(async i=>{i.src=await blobURL(i.dataset.p,i.dataset.d)});
+async function shrink(f){const b=await createImageBitmap(f),k=Math.min(1,1280/Math.max(b.width,b.height)),cv=document.createElement('canvas');cv.width=b.width*k;cv.height=b.height*k;cv.getContext('2d').drawImage(b,0,0,cv.width,cv.height);return new Promise(r=>cv.toBlob(r,'image/jpeg',.72))}
+
+/* ---------- views ---------- */
+const chip=()=>`<span id="st" class="chip ${st[1]}" data-a="sync">${esc(st[0])}</span>`;
+const hd=(back,title)=>`<header>${back?`<a href="${back}">‹</a>`:''}<h1>${esc(title)}</h1>${chip()}</header>`;
+function home(){const vs=Object.values(S.v).sort((a,b)=>b.upd-a.upd);
+ return hd('', 'CBS Ledger')+`<main><p class="muted">Enter the Vatika name to begin. Every Vatika gets its own complete ledger (all 12 sheets) and its own Google Sheet.</p>
+ <div class="add"><input id="nv" placeholder="Vatika name" autocomplete="off"><button data-a="newv">Start</button></div>
+ ${vs.map(v=>`<a class="card" href="#/v/${v.id}"><b>${esc(v.name)}</b><small class="muted">${v.dirty?'● unsaved':'✓ saved'} · ${new Date(v.upd).toLocaleDateString()}</small></a>`).join('')||'<p class="muted">No Vatikas yet.</p>'}</main>`}
+function vPg(v){return hd('#/',v.name)+`<main><div class="sum">${CARDS.map(([l,f])=>`<div><small>${l}</small><b>₹ ${fm(f(v))}</b></div>`).join('')}</div>
+ <div class="tiles">${SH.map(s=>`<a class="tile" href="#/v/${v.id}/${s.k}">${s.i} <b>${s.t}</b><small>${(v.secs[s.k]||[]).reduce((n,x)=>n+x.rows.length,0)} entries · ${(v.secs[s.k]||[]).length} section(s)</small></a>`).join('')}</div>
+ <div class="acts"><button data-a="sync">☁ Sync now</button>${v.sid?'<button class="s" data-a="gsheet">Open Google Sheet</button>':''}<button class="s" data-a="export">⬇ Excel</button><button class="d" data-a="delv">Delete Vatika</button></div></main>`}
+function rowH(t,r,i){return`<details class="row" data-r="${r.id}" ${openR===r.id?'open':''}><summary>${i+1}. ${fd(r.d)||'New entry'} ${esc(t.c.find(c=>!c.t&&r[c.k])?r[t.c.find(c=>!c.t&&r[c.k]).k]:'')}</summary><div class="g">${t.c.map(c=>`<div><label>${esc(c.l)}</label>${c.t==='calc'?`<output data-f="${c.f}">${fm(ev(c.f,r))}</output>`:c.t==='sel'?`<select data-k="${c.k}"><option value=""></option>${c.o.map(o=>`<option ${r[c.k]===o?'selected':''}>${o}</option>`).join('')}</select>`:`<input data-k="${c.k}" type="${c.t==='date'?'date':c.t==='num'?'number':'text'}" ${c.t==='num'?'inputmode="decimal" step="any"':''} value="${esc(r[c.k])}">`}</div>`).join('')}</div>
+ <div class="ph">${(r.ph||[]).map(p=>`<span><img class="th" data-a="viewph" data-p="${p.id}" data-d="${p.did||''}" alt="photo"><i data-a="delph" data-p="${p.id}">×</i></span>`).join('')}</div>
+ <div class="ra"><label class="btn s">📷 Add photo<input type="file" accept="image/*" multiple hidden data-a="pick"></label><button class="d" data-a="delrow">Remove entry</button></div></details>`}
+function totH(t,sec){const T=tots(t,sec);return(t.tot||[]).map(k=>`<span>${esc(t.c.find(c=>c.k===k).l)}: <b data-tk="${k}">${fm(T[k])}</b></span>`).join('')+(t.bal?`<span>Balance: <b data-tk="bal">${fm(T.bal)}</b></span>`:'')}
+function sheetPg(v,sh){const secs=v.secs[sh.k];
+ return hd('#/v/'+v.id,sh.i+' '+sh.t)+`<main><p class="muted">${esc(v.name)}</p>${secs.map(sec=>{const t=sh.s[sec.tpl];return`<section class="sec" data-s="${sec.id}"><div class="sh"><input class="st" data-st value="${esc(sec.t)}"><button class="d" data-a="delsec">🗑</button></div>${sec.rows.map((r,i)=>rowH(t,r,i)).join('')}<button class="addrow" data-a="addrow">＋ Add entry</button><div class="tot">${totH(t,sec)}</div></section>`}).join('')}
+ <p class="muted">Add a new section:</p><div class="adds">${sh.s.map((t,i)=>`<button class="s" data-a="addsec" data-t="${i}">＋ ${esc(t.t)}</button>`).join('')}</div></main>`}
+const hash=()=>location.hash.slice(2).split('/');
+function render(){const h=hash(),v=h[0]==='v'&&S.v[h[1]],y=scrollY,sh=v&&SH.find(s=>s.k===h[2]);
+ $('#app').innerHTML=!v?home():sh?sheetPg(v,sh):vPg(v);scrollTo(0,location.hash===lastH?y:0);lastH=location.hash;imgs()}
+addEventListener('hashchange',render);
+
+/* ---------- events ---------- */
+const cx=el=>{const h=hash(),v=S.v[h[1]],sh=SH.find(s=>s.k===h[2]),se=el.closest('[data-s]'),re=el.closest('[data-r]'),sec=se&&v.secs[sh.k].find(x=>x.id===se.dataset.s);return{v,sh,se,sec,t:sec&&sh.s[sec.tpl],re,row:re&&sec.rows.find(x=>x.id===re.dataset.r)}};
+function recalc(C){C.se.querySelectorAll('[data-r]').forEach(re=>{const r=C.sec.rows.find(x=>x.id===re.dataset.r);re.querySelectorAll('output[data-f]').forEach(o=>o.textContent=fm(ev(o.dataset.f,r)))});const T=tots(C.t,C.sec);C.se.querySelectorAll('[data-tk]').forEach(o=>o.textContent=fm(T[o.dataset.tk]))}
+document.addEventListener('input',e=>{const el=e.target;if(el.id==='nv')return;const C=cx(el);if(!C.sec)return;
+ if(el.dataset.st!==undefined)C.sec.t=el.value;else if(el.dataset.k&&C.row){C.row[el.dataset.k]=el.value;recalc(C)}else return;touch(C.v)});
+document.addEventListener('change',async e=>{const el=e.target;if(el.dataset.a!=='pick')return;const C=cx(el);
+ for(const f of el.files){const id=uid(),b=await shrink(f);await idb('put',id,b);(C.row.ph=C.row.ph||[]).push({id})}touch(C.v);openR=C.row.id;render()});
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-a]');if(!b||b.dataset.a==='pick')return;const A=b.dataset.a,h=hash(),v=S.v[h[1]];
+ if(A==='sync'){sync(1);return}
+ if(A==='newv'){const nm=$('#nv').value.trim();if(!nm)return $('#nv').focus();if(Object.values(S.v).some(x=>x.name.toLowerCase()===nm.toLowerCase()))return alert('That Vatika already exists.');
+  const n={id:uid(),name:nm,upd:0,secs:{}};SH.forEach(s=>n.secs[s.k]=mkSecs(s));S.v[n.id]=n;touch(n);location.hash='#/v/'+n.id;return}
+ if(A==='gsheet')return open('https://docs.google.com/spreadsheets/d/'+v.sid);
+ if(A==='export')return xl(v);
+ if(A==='delv'){if(!confirm(`Delete Vatika "${v.name}"? Its Google Sheet and saved data in Drive go to the Drive trash.`))return;
+  if(LS.was)for(const id of[v.sid,v.did])if(id)try{await api(`${DR}/files/${id}`,J('PATCH',{trashed:true}))}catch{}
+  delete S.v[v.id];save();location.hash='#/';return}
+ if(A==='addsec'){const sh=SH.find(s=>s.k===h[2]),i=+b.dataset.t,n=v.secs[sh.k].filter(x=>x.tpl===i).length;
+  const nm=prompt('Section name',sh.k==='vb'?'Vaibhavi-'+(n+1):`${sh.s[i].t} (${n+1})`);if(!nm)return;v.secs[sh.k].push(mk(i,nm));touch(v);return render()}
+ const C=cx(b);if(!C.sec)return;
+ if(A==='delsec'){if(!confirm(`Remove section "${C.sec.t}" and its ${C.sec.rows.length} entries?`))return;C.v.secs[C.sh.k]=C.v.secs[C.sh.k].filter(x=>x!==C.sec);touch(C.v);return render()}
+ if(A==='addrow'){const r={id:uid(),d:today(),ph:[]};C.sec.rows.push(r);openR=r.id;touch(C.v);return render()}
+ if(A==='delrow'){if(!confirm('Remove this entry?'))return;C.sec.rows=C.sec.rows.filter(x=>x!==C.row);touch(C.v);return render()}
+ if(A==='delph'){C.row.ph=C.row.ph.filter(p=>p.id!==b.dataset.p);openR=C.row.id;touch(C.v);return render()}
+ if(A==='viewph'){const u=await blobURL(b.dataset.p,b.dataset.d);if(u)open(u)}});
+
+/* ---------- Excel export (same layout as the original workbook) ---------- */
+async function xl(v){if(!window.XLSX)await new Promise((r,j)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=r;s.onerror=()=>j(alert('Excel export needs an internet connection the first time.'));document.head.append(s)});
+ const wb=XLSX.utils.book_new();SH.forEach(s=>{const ws=XLSX.utils.aoa_to_sheet(grid(s,v).rows);for(const a in ws)if(a[0]!=='!'&&typeof ws[a].v==='string'&&ws[a].v[0]==='=')ws[a]={t:'n',f:ws[a].v.slice(1)};XLSX.utils.book_append_sheet(wb,ws,s.t)});
+ XLSX.writeFile(wb,`CBS Ledger - ${v.name}.xlsx`)}
+
+/* ---------- boot ---------- */
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
+render();
+if(LS.was&&LS.cid)sync(1);
+</script></body></html>
